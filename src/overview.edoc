@@ -1,0 +1,7 @@
+** this is the overview.doc file for the application 'erlips' **
+
+@author litao cheng <litaocheng@gmail.com>
+@copyright 2009 erlips
+@version 0.0.1
+@title Welcome to the `erlips' application!
+@doc `erlips' is a demo application for erlang devel.
