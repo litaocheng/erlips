@@ -1,39 +1,40 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%%! -smp disable
+%%! -smp disable
+-mode(compile).
 
--define(DEF_CONFIG, "rel.config").
 -define(SCRIPT_EXT, ".script").
 -define(TAR_EXT, ".tar.gz").
 -define(REL_DIR_BASE, "target-release").
 
-main(Args) ->
+usage() ->
+    io:format("
+usage:
+    gen_release Config - generate the target system based Config file\n
+").
+
+main([]) ->
+    usage(),
+    halt(1);
+main([Config]) ->
     %io:format("arg is ~p~n", [Args]),
-    File = get_config_file(Args),
-    io:format("file is ~p~n", [File]),
-    case file:read_file_info(File) of
+    io:format("config file is ~p~n", [Config]),
+    case file:read_file_info(Config) of
         {error, _} ->
             io:format("reltool config file not exists!~n"),
             erlang:halt(1);
         {ok, _} ->
             ok
     end,
-    {ok, Server} = reltool:start_server([{config, File}]),
+    {ok, Server} = reltool:start_server([{config, Config}]),
     {ok, _RelConfig} = reltool:get_config(Server, true, true),
     io:format("full config is :~p~n", [_RelConfig]),
     
-    gen_boot_script(Server, rel_name(File)),
-    {ok, RelDir} = gen_target_system(Server, File),
-    io:format("create tar archive..."),
-    TarFile = RelDir ++ ?TAR_EXT,
-    "" = os:cmd("tar czf " ++ TarFile ++ " " ++ RelDir),
-    io:format("ok~ntar is ~p~n", [TarFile]).
+    io:format("gen boot script ...~n", []),
+    gen_boot_script(Server, rel_name(Config)),
+    io:format("gen target system ...~n", []),
+    gen_target_system(Server, Config).
 
-%% get config file
-get_config_file([]) ->
-    ?DEF_CONFIG;
-get_config_file([Config]) ->
-    Config.
 
 %% get the release name from the file
 rel_name(File) ->
@@ -56,11 +57,17 @@ gen_target_system(Server, ConfigFile) ->
     file:make_dir(RelDir),
     ok = reltool:eval_target_spec(Spec, code:root_dir(), RelDir),
     cp_start_clean_boot(RelDir),
-    cp_ctl_sh(RelDir, rel_name(ConfigFile)),
+
+    io:format("create control file ...~n"),
+    {ok, CtlFile} = cp_ctl_sh(RelDir, rel_name(ConfigFile)),
     LibDir = filename:join([RelDir, "lib"]),
+
+    io:format("create tar archive...~n"),
+    TarFile = RelDir ++ ?TAR_EXT,
+    "" = os:cmd("chmod +x " ++ CtlFile ++ " && tar czf " ++ TarFile ++ " " ++ RelDir),
     io:format("reldir:~p~nsub dirs:~p~nlib dirs:~p~n", 
         [RelDir, file:list_dir(RelDir), file:list_dir(LibDir)]),
-    {ok, RelDir}. 
+    io:format("ok~ntar is ~p~n", [TarFile]).
 
 get_reldir() ->
     {{Y, Mon, Day}, {H, M, S}} = erlang:localtime(),
@@ -77,17 +84,16 @@ cp_start_clean_boot(RelDir) ->
 
 %% copy the RelDir/lib/erlips/erlipsctl to the RelDir
 cp_ctl_sh(RelDir, App) ->
-    Src = filename:join([RelDir, "lib", App++"*", App ++ "ctl"]),
+    SrcWild = filename:join([RelDir, "lib", App++"*", App ++ "ctl"]),
     Des = filename:join([RelDir, App ++ "ctl"]),
-    io:format("src is ~p des is:~p~n", [Src, Des]),
+    [Src] = filelib:wildcard(SrcWild),
 
-    % first mv the file to RelDir
-    "" = os:cmd(lists:concat(["mv ", Src, " ", Des])), 
-    % change the erlipsctl ERL variable
-    %Cmd = lists:concat(["cat ", Des, " | sed -e \"s/ERL=erl\\/ERL=.\\/bin\\/erl/g\" > ", Des]),
-    Cmd = lists:concat(["cat ", Des, " | sed -e \"s/ERL=erl/ERL=.\\/bin\\/erl/g\" > ", Des]),
-    io:format("cmd is ~p~n", [Cmd]),
-    "" = os:cmd(Cmd).
+    
+    {ok, Bin} = file:read_file(Src),
+    Bin2 = re:replace(Bin, "ERL=erl", "ERL=./bin/erl"),
+    io:format("write control script to ~p~n", [Des]),
+    ok = file:write_file(Des, Bin2),
+    {ok, Des}.
     
 
 to_file(Base, File) ->

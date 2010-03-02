@@ -28,6 +28,12 @@ erl_top()
     export ERL_TOP 
 }
 
+newer_lib()
+{
+    Path=$1
+    echo `ls -d ${Path} | sort | tail -n 1`
+}
+
 # check if the ERL_TOP has been set
 if [ -z "$ERL_TOP" ]; then
    erl_top 
@@ -69,16 +75,25 @@ fi
 echo "Apps is :${APPS[@]}"
     
 # the app libs
-DIALYZER_OPTS=
+DIALYZER_APPS=
 for app in "${APPS[@]}"; do
-    DIALYZER_OPTS="${DIALYZER_OPTS} ${ERL_TOP}/lib/${app}-*/ebin"
-    #echo "dialyzer opts is $DIALYZER_OPTS"
+    AppNewer=$(newer_lib "${ERL_TOP}/lib/${app}*")
+    DIALYZER_APPS="${DIALYZER_APPS} ${AppNewer}"
+    #echo "dialyzer opts is $DIALYZER_APPS"
 done
 
 # gen the plt file
-dialyzer --build_plt --verbose --output_plt $PLT_PATH/$PLT  -r ${DIALYZER_OPTS}
+OUTFILE=$PLT_PATH/$PLT
+echo "output plt:$OUTFILE"
+echo "apps: $DIALYZER_APPS"
+dialyzer --build_plt --verbose --output_plt $OUTFILE -r ${DIALYZER_APPS}
 
-OUTFILE=$HOME/$PLT
-echo "  create dialyzer plt ok"
-echo "  the dialyzer plt is:"
-echo "  $OUTFILE"
+if [ $? -eq 0 -o $? -eq 2 ]; then
+    echo "  create dialyzer plt ok"
+    echo "  the dialyzer plt is:"
+    echo "  $OUTFILE"
+    exit 0
+else
+    echo " create dialyzer plt error when analysis"
+    exit 1
+fi
